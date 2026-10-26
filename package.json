@@ -1,0 +1,7 @@
+{
+  "name": "smart-syllabus-main-site",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test \"tests/*.test.mjs\"" },
+  "dependencies": { "marked": "16.4.2" }
+}
