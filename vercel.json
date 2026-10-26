@@ -1,4 +1,7 @@
 {
-  "rewrites": [{ "source": "/:path*", "destination": "/api/site?path=:path*" }],
+  "rewrites": [
+    { "source": "/", "destination": "/api/site" },
+    { "source": "/(.*)", "destination": "/api/site?path=$1" }
+  ],
   "crons": [{ "path": "/api/site?path=keepalive", "schedule": "17 6 * * 1,4" }]
 }
