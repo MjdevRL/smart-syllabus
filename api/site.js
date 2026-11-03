@@ -14,7 +14,7 @@ export async function respond(path, fetchFn = fetch) {
   catch {
     return { status: 503, headers: { 'content-type': HTML, 'cache-control': 'no-store' }, body: '<!doctype html><meta charset="utf-8"><title>Back soon</title><body style="font-family:system-ui;background:#191919;color:#ebebeb;padding:40px"><h1>Back in a moment</h1><p>The site could not load its pages. Please try again shortly.</p>' };
   }
-  const out = renderRoute(prepare(rows, '/'), path || '/');
+  const out = renderRoute(prepare(rows, '/', { db: SUPABASE }), path || '/');
   if (out.location) return { status: out.status, headers: { location: out.location, 'cache-control': CACHE }, body: '' };
   return { status: out.status, headers: { 'content-type': HTML, 'cache-control': out.status === 200 ? CACHE : 'public, s-maxage=10' }, body: out.html };
 }

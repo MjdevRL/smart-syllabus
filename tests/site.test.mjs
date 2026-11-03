@@ -4,12 +4,13 @@ import { prepare, renderRoute, renderPreview } from '../lib/render/site.mjs';
 import { loadContent } from '../lib/render/db.mjs';
 import { respond } from '../api/site.js';
 
-const page = (id, data) => ({ kind: 'page', id, data });
+const page = (id, data, updated_at) => ({ kind: 'page', id, data, updated_at });
 const rows = [
   { kind: 'setting', id: 'site', data: { site_name: 'My Guide', footer_text: 'Footer here', show_universities: false } },
   { kind: 'setting', id: 'home', data: { heading: 'Welcome home', intro: 'Hello **there**' } },
-  page('a', { title: 'Subjects', status: 'published', blocks: [{ type: 'text', body: 'Pick *well*' }, { type: 'link', title: 'IB', url: 'https://ibo.org', description: 'official' }] }),
-  page('b', { title: 'Maths', parent: 'a', status: 'published', blocks: [] }),
+  page('a', { title: 'Subjects', status: 'published', blocks: [{ type: 'text', body: 'Pick *well*' }, { type: 'link', title: 'IB', url: 'https://ibo.org', description: 'official' }] }, '2026-10-24T08:00:00+00:00'),
+  page('b', { title: 'Maths', parent: 'a', status: 'published', blocks: [] }, '2026-11-02T23:30:00+00:00'),
+  page('d', { title: 'Newer draft', status: 'draft', blocks: [] }, '2026-12-31T00:00:00+00:00'),
   page('c', { title: 'Secret', status: 'draft', blocks: [{ type: 'text', body: 'hidden' }] }),
   { kind: 'setting', id: 'url-history', data: { b: { title: 'Maths', parent: 'a', urls: ['/maths-old/', '/subjects/maths/'] } } },
 ];
@@ -61,7 +62,7 @@ test('db reader sends only the apikey header and throws on failure', async () =>
   let seen;
   const ok = await loadContent({ url: 'https://x.test', key: 'K' }, async (u, o) => { seen = [u, o]; return { ok: true, json: async () => [1] }; });
   assert.deepEqual(ok, [1]);
-  assert.equal(seen[0], 'https://x.test/rest/v1/content?select=kind,id,data');
+  assert.equal(seen[0], 'https://x.test/rest/v1/content?select=kind,id,data,updated_at');
   assert.deepEqual(seen[1].headers, { apikey: 'K' });
   await assert.rejects(loadContent({ url: 'u', key: 'k' }, async () => ({ ok: false, status: 401 })));
 });
@@ -83,4 +84,35 @@ test('handler: works with a plain Node request/response', async () => {
   await handler({ url: '/api/site?path=subjects' }, { setHeader: (k, v) => { h[k] = v; }, end: (b) => { body = b; }, set statusCode(v) { code = v; } });
   globalThis.fetch = orig;
   assert.equal(code, 200); assert.match(body, /Pick/); assert.match(h['content-type'], /html/);
+});
+
+test('every page shows its own "last updated" date; draft changes do not count', () => {
+  assert.match(renderRoute(m, '/subjects/').html, /Last updated: <time datetime="2026-10-24">24 October 2026/);
+  assert.match(renderRoute(m, '/subjects/maths/').html, /2 November 2026/);
+  assert.match(renderRoute(m, '/').html, /Last updated: <time datetime="2026-11-02">2 November 2026/); // newest published change
+  assert.doesNotMatch(renderRoute(m, '/').html, /31 December/);
+});
+test('no date line when the database gave none (e.g. unsaved preview rows)', () => {
+  assert.doesNotMatch(renderRoute(prepare([page('z', { title: 'Z', status: 'published', blocks: [] })]), '/z/').html, /Last updated/);
+});
+const DB = { url: 'https://x.supabase.co', key: 'sb_publishable_k' };
+test('public site: visit counter on every real page, not on 404, not in the editor preview', () => {
+  const mm = prepare(rows, '/', { db: DB });
+  for (const p of ['/', '/subjects/', '/subjects/maths/', '/feedback/']) assert.match(renderRoute(mm, p).html, /rpc\/track_visit/, p);
+  assert.doesNotMatch(renderRoute(mm, '/nope/').html, /track_visit/);
+  assert.doesNotMatch(renderRoute(m, '/').html, /track_visit/);
+  assert.doesNotMatch(renderPreview(rows, '/', 'home', {}), /track_visit/);
+  assert.match(renderRoute(mm, '/').html, /<script>[^]*<\/script><\/body>/);
+});
+test('feedback page exists only on the live site, and is listed in the menu', () => {
+  assert.equal(renderRoute(m, '/feedback/').status, 404);
+  const r = renderRoute(prepare(rows, '/', { db: DB }), '/feedback/');
+  assert.equal(r.status, 200);
+  assert.match(r.html, /<form id="fb"/);
+  assert.match(r.html, /rest\/v1\/feedback/);
+  assert.match(r.html, /href="\/feedback\/"/);
+});
+test('"feedback" cannot be used as a page address', () => {
+  const x = prepare([page('f', { title: 'Feedback', status: 'published', blocks: [] })]);
+  assert.ok(x.resolved.errors.length > 0);
 });
